@@ -3,7 +3,7 @@ use common::counter::AmbientContext;
 use common::counter::hw::HwFutureExt;
 
 use super::TableOfContent;
-use crate::content_manager::consensus_state_machine::Action;
+use crate::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
 use crate::content_manager::errors::{StorageError, StorageResult};
 
 impl TableOfContent {
@@ -13,6 +13,56 @@ impl TableOfContent {
 
     async fn apply_action(&self, action: Action) -> StorageResult<()> {
         match &action {
+            Action::UpdateCollectionConfig { collection, diff } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+
+                let recreate_optimizers = match diff.as_ref() {
+                    CollectionConfigDiff::Optimizers(diff) => {
+                        collection
+                            .update_optimizer_params_from_diff(diff.clone())
+                            .await?;
+                        true
+                    }
+                    CollectionConfigDiff::Params(diff) => {
+                        collection.update_params_from_diff(diff.clone()).await?;
+                        true
+                    }
+                    CollectionConfigDiff::Hnsw(diff) => {
+                        collection.update_hnsw_config_from_diff(diff.clone()).await?;
+                        true
+                    }
+                    CollectionConfigDiff::Vectors(diff) => {
+                        collection.update_vectors_from_diff(diff).await?;
+                        true
+                    }
+                    CollectionConfigDiff::Quantization(diff) => {
+                        collection
+                            .update_quantization_config_from_diff(diff.clone())
+                            .await?;
+                        true
+                    }
+                    CollectionConfigDiff::SparseVectors(diff) => {
+                        collection.update_sparse_vectors_from_other(diff).await?;
+                        true
+                    }
+                    CollectionConfigDiff::StrictMode(diff) => {
+                        collection.update_strict_mode_config(diff.clone()).await?;
+                        false
+                    }
+                    CollectionConfigDiff::Metadata(metadata) => {
+                        collection.update_metadata(metadata.clone()).await?;
+                        false
+                    }
+                };
+
+                collection.print_warnings().await;
+                if recreate_optimizers {
+                    collection.recreate_optimizers_background();
+                }
+
+                Ok(())
+            }
+
             Action::AddNamedVector {
                 collection,
                 vector_name,
@@ -96,7 +146,6 @@ impl TableOfContent {
 
             Action::CreateCollection { .. }
             | Action::DropCollection { .. }
-            | Action::UpdateCollectionConfig { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
