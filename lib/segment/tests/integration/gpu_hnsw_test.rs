@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -145,6 +146,7 @@ fn create_test_segment(
 
 #[test]
 fn test_gpu_filterable_hnsw() {
+    let _hw = hw::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
